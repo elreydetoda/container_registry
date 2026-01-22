@@ -1,6 +1,6 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
-from container_registry.agent_functions.shared import get_arg_or_build_value
+from container_registry.agent_functions.shared import get_arg_or_build_value, get_registry_proto_url
 import asyncio
 import json
 
@@ -10,30 +10,30 @@ class ListTagsArguments(TaskArguments):
         super().__init__(command_line, **kwargs)
         self.args = [
             CommandParameter(
-                name="repository",
+                name="image_name",
                 type=ParameterType.String,
-                description="Repository to list tags for (e.g., docker://docker.io/library/alpine)",
-                parameter_group_info=[ParameterGroupInfo(required=True)],
+                description="List tags for image name (e.g., the image name is alpine from docker://localhost:5000/alpine & library/alpine from docker://docker.io/library/alpine)",
+                parameter_group_info=[ParameterGroupInfo(required=True, ui_position=0)],
             ),
             CommandParameter(
                 name="USERNAME",
                 type=ParameterType.String,
                 description="Registry username (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=1)],
                 default_value="",
             ),
             CommandParameter(
                 name="PASSWORD",
                 type=ParameterType.String,
                 description="Registry password/token (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=2)],
                 default_value="",
             ),
             CommandParameter(
                 name="INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure connections",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=3)],
                 default_value=False,
             ),
         ]
@@ -81,7 +81,7 @@ class ListTags(CommandBase):
                 cmd.append("--tls-verify=false")
 
             # Add the repository
-            repository = taskData.args.get_arg("repository")
+            repository = f"{get_registry_proto_url(taskData=taskData)}/{taskData.args.get_arg('image_name')}"
             cmd.append(repository)
 
             # Execute skopeo command
