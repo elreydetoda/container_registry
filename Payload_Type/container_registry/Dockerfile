@@ -13,7 +13,7 @@ WORKDIR /Mythic/
 COPY . /Mythic/
 
 # Install Python dependencies
-RUN pip install --no-cache-dir mythic-container==0.3.4
+RUN pip install --no-cache-dir mythic-container==0.3.4 requests==2.31.0
 
 # Set the entrypoint
 CMD ["python3", "main.py"]

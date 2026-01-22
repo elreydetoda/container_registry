@@ -11,6 +11,7 @@ This payload type is a **service payload** (similar to the BloodHound payload) t
 - Inspect container images
 - Copy images between registries
 - Delete images from registries
+- List all repositories in a registry (catalog)
 - List tags for repositories
 - Sync images between registries or to local storage
 - Support for authenticated and insecure registry connections
@@ -125,6 +126,25 @@ Delete a container image from a registry.
 }
 ```
 
+#### list_catalog
+
+List all repositories in a registry using the Docker Registry HTTP API V2.
+
+**Parameters:**
+- `registry_url`: Registry URL (e.g., `https://registry-1.docker.io`, `https://ghcr.io`)
+- `username`: Registry username (optional)
+- `password`: Registry password/token (optional)
+- `insecure`: Allow insecure connections (skip TLS verification) (optional)
+
+**Example:**
+```json
+{
+  "registry_url": "https://myregistry.com",
+  "username": "myuser",
+  "password": "mytoken"
+}
+```
+
 #### list_tags
 
 List all tags for a repository.
@@ -181,6 +201,7 @@ container_registry/
 │       │   │   ├── inspect.py       # Inspect command
 │       │   │   ├── copy.py          # Copy command
 │       │   │   ├── delete.py        # Delete command
+│       │   │   ├── list_catalog.py  # List catalog command
 │       │   │   ├── list_tags.py     # List tags command
 │       │   │   └── sync.py          # Sync command
 │       │   └── __init__.py
