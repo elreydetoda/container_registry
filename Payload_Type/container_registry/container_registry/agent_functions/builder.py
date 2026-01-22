@@ -7,43 +7,41 @@ class ContainerRegistry(PayloadType):
     name = "container_registry"
     file_extension = ""
     author = "@elreydetoda"
-    supported_os = [SupportedOS.Linux]
+    supported_os = [SupportedOS("container_registry")]
     wrapper = False
     wrapped_payloads = []
     note = """
-    This is a service payload that wraps skopeo for OCI container registry operations.
-    It provides a Mythic interface to interact with container registries similar to how
-    the bloodhound payload interacts with BloodHound CE.
-
-    Skopeo must be installed on the Mythic server for this payload to work.
+    This is a 3rd party service payload that wraps skopeo
+    (https://github.com/containers/skopeo) for OCI container registry operations.
     """
     supports_dynamic_loading = False
     mythic_encrypts = True
+    agent_type = AgentType.Service
     version = "0.0.1"
 
     build_parameters = [
         BuildParameter(
-            name="registry_url",
+            name="BASE_HOST",
             parameter_type=BuildParameterType.String,
             description="Default container registry URL (e.g., docker.io, ghcr.io, quay.io)",
-            default_value="docker.io",
+            default_value="localhost:5000",
         ),
         BuildParameter(
-            name="registry_username",
+            name="USERNAME",
             parameter_type=BuildParameterType.String,
             description="Registry username (optional, can be set per command)",
             default_value="",
             required=False,
         ),
         BuildParameter(
-            name="registry_password",
+            name="PASSWORD",
             parameter_type=BuildParameterType.String,
             description="Registry password/token (optional, can be set per command)",
             default_value="",
             required=False,
         ),
         BuildParameter(
-            name="insecure",
+            name="INSECURE",
             parameter_type=BuildParameterType.Boolean,
             description="Allow insecure (HTTP) registry connections",
             default_value=False,
@@ -79,7 +77,7 @@ class ContainerRegistry(PayloadType):
                 Host="ContainerRegistry",
                 Ip="127.0.0.1",
                 IntegrityLevel=3,
-                ExtraInfo=f"Registry: {self.get_parameter('registry_url')}",
+                ExtraInfo=f"Registry: {self.get_parameter('BASE_HOST')}",
             )
         )
 

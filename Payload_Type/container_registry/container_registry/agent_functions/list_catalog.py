@@ -1,5 +1,6 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
+from container_registry.agent_functions.shared import get_arg_or_build_value, get_registry_base_url
 import json
 import requests
 
@@ -9,31 +10,32 @@ class ListCatalogArguments(TaskArguments):
         super().__init__(command_line, **kwargs)
         self.args = [
             CommandParameter(
-                name="registry_url",
+                name="BASE_HOST",
                 type=ParameterType.String,
-                description="Registry URL (e.g., https://registry-1.docker.io, https://ghcr.io)",
-                parameter_group_info=[ParameterGroupInfo(required=True)],
-            ),
-            CommandParameter(
-                name="username",
-                type=ParameterType.String,
-                description="Registry username (optional)",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                description="Registry BASE_HOST (e.g., registry-1.docker.io, ghcr.io, localhost:5000) -- leave empty to use from provided build parameters",
                 default_value="",
-            ),
-            CommandParameter(
-                name="password",
-                type=ParameterType.String,
-                description="Registry password/token (optional)",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
-                default_value="",
             ),
             CommandParameter(
-                name="insecure",
+                name="USERNAME",
+                type=ParameterType.String,
+                description="Registry username (optional) -- leave empty to use from provided build parameters",
+                default_value="",
+                parameter_group_info=[ParameterGroupInfo(required=False)],
+            ),
+            CommandParameter(
+                name="PASSWORD",
+                type=ParameterType.String,
+                description="Registry password/token (optional) -- leave empty to use from provided build parameters",
+                default_value="",
+                parameter_group_info=[ParameterGroupInfo(required=False)],
+            ),
+            CommandParameter(
+                name="INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure connections (skip TLS verification)",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value=False,
+                parameter_group_info=[ParameterGroupInfo(required=False)],
             ),
         ]
 
@@ -60,19 +62,19 @@ class ListCatalog(CommandBase):
     async def create_go_tasking(self, taskData: MythicCommandBase.PTTaskMessageAllData) -> MythicCommandBase.PTTaskCreateTaskingMessageResponse:
         response = MythicCommandBase.PTTaskCreateTaskingMessageResponse(
             TaskID=taskData.Task.ID,
-            Success=True,
+            Success=False,
+            Completed=True,
         )
 
         try:
-            registry_url = taskData.args.get_arg("registry_url")
-            username = taskData.args.get_arg("username")
-            password = taskData.args.get_arg("password")
-            insecure = taskData.args.get_arg("insecure")
+            registry_url = get_arg_or_build_value(taskData, "BASE_HOST")
+            username = get_arg_or_build_value(taskData, "USERNAME")
+            password = get_arg_or_build_value(taskData, "PASSWORD")
+            insecure = get_arg_or_build_value(taskData, "INSECURE")
 
-            # Ensure registry_url doesn't end with /
-            registry_url = registry_url.rstrip('/')
+            registry_url = get_registry_base_url(registry_url, insecure)
 
-            # Build the catalog endpoint URL
+            # Build the catalog endpoint BASE_HOST
             catalog_url = f"{registry_url}/v2/_catalog"
 
             # Prepare authentication
@@ -107,6 +109,7 @@ class ListCatalog(CommandBase):
                             Response=formatted_output.encode(),
                         )
                     )
+                    response.Success = True
                 except json.JSONDecodeError:
                     # If response is not JSON, might be an error message
                     await SendMythicRPCResponseCreate(

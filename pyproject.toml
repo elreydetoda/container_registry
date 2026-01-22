@@ -1,0 +1,14 @@
+[project]
+name = "container-registry"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+# since classifier is 3.11: https://github.com/MythicMeta/MythicContainerPyPi/blob/26a1a7b6c10b2ef530e24fe39a6e7278c1266479/setup.py#L24
+# also: https://github.com/MythicAgents/apfell/blob/e3e0b54ab4aee0f73ea6d33accc2216a96f4d5eb/Payload_Type/apfell/Dockerfile#L1
+requires-python = "==3.11.*"
+dependencies = [
+    # found from: https://github.com/MythicAgents/apfell/blob/e3e0b54ab4aee0f73ea6d33accc2216a96f4d5eb/Payload_Type/apfell/.docker/requirements.txt
+    # while seeing there's a venv during watching: https://youtu.be/8tf2TUIEx-I?t=587
+    "mythic-container==0.6.9",
+    "requests>=2.32.5",
+]
