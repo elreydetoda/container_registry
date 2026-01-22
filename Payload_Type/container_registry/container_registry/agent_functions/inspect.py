@@ -1,5 +1,6 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
+from container_registry.agent_functions.shared import get_arg_or_build_value
 import json
 import asyncio
 
@@ -15,21 +16,21 @@ class InspectArguments(TaskArguments):
                 parameter_group_info=[ParameterGroupInfo(required=True)],
             ),
             CommandParameter(
-                name="username",
+                name="USERNAME",
                 type=ParameterType.String,
-                description="Registry username (optional, overrides build parameter)",
+                description="Registry username (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="password",
+                name="PASSWORD",
                 type=ParameterType.String,
-                description="Registry password/token (optional, overrides build parameter)",
+                description="Registry password/token (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="insecure",
+                name="INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure connections",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
@@ -67,7 +68,8 @@ class Inspect(CommandBase):
     async def create_go_tasking(self, taskData: MythicCommandBase.PTTaskMessageAllData) -> MythicCommandBase.PTTaskCreateTaskingMessageResponse:
         response = MythicCommandBase.PTTaskCreateTaskingMessageResponse(
             TaskID=taskData.Task.ID,
-            Success=True,
+            Success=False,
+            Completed=True,
         )
 
         try:
@@ -75,13 +77,14 @@ class Inspect(CommandBase):
             cmd = ["skopeo", "inspect"]
 
             # Add authentication if provided
-            username = taskData.args.get_arg("username")
-            password = taskData.args.get_arg("password")
+            username = get_arg_or_build_value(taskData, "USERNAME")
+            password = get_arg_or_build_value(taskData, "PASSWORD")
             if username and password:
                 cmd.extend(["--creds", f"{username}:{password}"])
 
             # Add insecure flag if needed
-            if taskData.args.get_arg("insecure"):
+            insecure = get_arg_or_build_value(taskData, "INSECURE")
+            if insecure:
                 cmd.append("--tls-verify=false")
 
             # Add raw flag if requested
@@ -113,6 +116,7 @@ class Inspect(CommandBase):
                             Response=f"Successfully inspected {image}:\n\n{formatted_output}".encode(),
                         )
                     )
+                    response.Success = True
                 except json.JSONDecodeError:
                     # If not JSON, return as-is
                     await SendMythicRPCResponseCreate(
@@ -121,6 +125,7 @@ class Inspect(CommandBase):
                             Response=f"Successfully inspected {image}:\n\n{output}".encode(),
                         )
                     )
+                    response.Success = True
             else:
                 error_msg = stderr.decode()
                 await SendMythicRPCResponseCreate(

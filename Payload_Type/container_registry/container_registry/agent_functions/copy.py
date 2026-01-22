@@ -1,5 +1,6 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
+from container_registry.agent_functions.shared import get_arg_or_build_value
 import asyncio
 
 
@@ -20,42 +21,42 @@ class CopyArguments(TaskArguments):
                 parameter_group_info=[ParameterGroupInfo(required=True)],
             ),
             CommandParameter(
-                name="src_username",
+                name="SRC_USERNAME",
                 type=ParameterType.String,
-                description="Source registry username (optional)",
+                description="Source registry username (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="src_password",
+                name="SRC_PASSWORD",
                 type=ParameterType.String,
-                description="Source registry password/token (optional)",
+                description="Source registry password/token (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="dest_username",
+                name="DEST_USERNAME",
                 type=ParameterType.String,
-                description="Destination registry username (optional)",
+                description="Destination registry username (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="dest_password",
+                name="DEST_PASSWORD",
                 type=ParameterType.String,
-                description="Destination registry password/token (optional)",
+                description="Destination registry password/token (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="src_insecure",
+                name="SRC_INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure source connections",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value=False,
             ),
             CommandParameter(
-                name="dest_insecure",
+                name="DEST_INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure destination connections",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
@@ -93,7 +94,8 @@ class Copy(CommandBase):
     async def create_go_tasking(self, taskData: MythicCommandBase.PTTaskMessageAllData) -> MythicCommandBase.PTTaskCreateTaskingMessageResponse:
         response = MythicCommandBase.PTTaskCreateTaskingMessageResponse(
             TaskID=taskData.Task.ID,
-            Success=True,
+            Success=False,
+            Completed=True,
         )
 
         try:
@@ -101,21 +103,24 @@ class Copy(CommandBase):
             cmd = ["skopeo", "copy"]
 
             # Add source authentication if provided
-            src_username = taskData.args.get_arg("src_username")
-            src_password = taskData.args.get_arg("src_password")
+            src_username = taskData.args.get_arg("SRC_USERNAME") or get_arg_or_build_value(taskData, "USERNAME")
+            src_password = taskData.args.get_arg("SRC_PASSWORD") or get_arg_or_build_value(taskData, "PASSWORD")
             if src_username and src_password:
                 cmd.extend(["--src-creds", f"{src_username}:{src_password}"])
 
             # Add destination authentication if provided
-            dest_username = taskData.args.get_arg("dest_username")
-            dest_password = taskData.args.get_arg("dest_password")
+            dest_username = taskData.args.get_arg("DEST_USERNAME") or get_arg_or_build_value(taskData, "USERNAME")
+            dest_password = taskData.args.get_arg("DEST_PASSWORD") or get_arg_or_build_value(taskData, "PASSWORD")
             if dest_username and dest_password:
                 cmd.extend(["--dest-creds", f"{dest_username}:{dest_password}"])
 
             # Add insecure flags if needed
-            if taskData.args.get_arg("src_insecure"):
+            src_insecure = taskData.args.get_arg("SRC_INSECURE") or get_arg_or_build_value(taskData, "INSECURE")
+            if src_insecure:
                 cmd.append("--src-tls-verify=false")
-            if taskData.args.get_arg("dest_insecure"):
+
+            dest_insecure = taskData.args.get_arg("DEST_INSECURE") or get_arg_or_build_value(taskData, "INSECURE")
+            if dest_insecure:
                 cmd.append("--dest-tls-verify=false")
 
             # Add all flag if requested
@@ -151,6 +156,7 @@ class Copy(CommandBase):
                         Response=result.encode(),
                     )
                 )
+                response.Success = True
             else:
                 error_msg = stderr.decode()
                 await SendMythicRPCResponseCreate(

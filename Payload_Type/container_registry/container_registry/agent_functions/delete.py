@@ -1,5 +1,6 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
+from container_registry.agent_functions.shared import get_arg_or_build_value
 import asyncio
 
 
@@ -14,21 +15,21 @@ class DeleteArguments(TaskArguments):
                 parameter_group_info=[ParameterGroupInfo(required=True)],
             ),
             CommandParameter(
-                name="username",
+                name="USERNAME",
                 type=ParameterType.String,
-                description="Registry username (optional)",
+                description="Registry username (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="password",
+                name="PASSWORD",
                 type=ParameterType.String,
-                description="Registry password/token (optional)",
+                description="Registry password/token (optional) -- leave empty to use from provided build parameters",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
                 default_value="",
             ),
             CommandParameter(
-                name="insecure",
+                name="INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure connections",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
@@ -59,7 +60,8 @@ class Delete(CommandBase):
     async def create_go_tasking(self, taskData: MythicCommandBase.PTTaskMessageAllData) -> MythicCommandBase.PTTaskCreateTaskingMessageResponse:
         response = MythicCommandBase.PTTaskCreateTaskingMessageResponse(
             TaskID=taskData.Task.ID,
-            Success=True,
+            Success=False,
+            Completed=True,
         )
 
         try:
@@ -67,13 +69,14 @@ class Delete(CommandBase):
             cmd = ["skopeo", "delete"]
 
             # Add authentication if provided
-            username = taskData.args.get_arg("username")
-            password = taskData.args.get_arg("password")
+            username = get_arg_or_build_value(taskData, "USERNAME")
+            password = get_arg_or_build_value(taskData, "PASSWORD")
             if username and password:
                 cmd.extend(["--creds", f"{username}:{password}"])
 
             # Add insecure flag if needed
-            if taskData.args.get_arg("insecure"):
+            insecure = get_arg_or_build_value(taskData, "INSECURE")
+            if insecure:
                 cmd.append("--tls-verify=false")
 
             # Add the image
@@ -104,6 +107,7 @@ class Delete(CommandBase):
                         Response=result.encode(),
                     )
                 )
+                response.Success = True
             else:
                 error_msg = stderr.decode()
                 await SendMythicRPCResponseCreate(
