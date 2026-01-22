@@ -86,6 +86,9 @@ class ListCatalog(CommandBase):
             verify_ssl = not insecure
 
             # Make the GET request
+            logger.debug(f"Command parameters: {taskData.args.to_json()}")
+            logger.debug(f"Builder parameters: {[paramz.to_json() for paramz in taskData.BuildParameters]}")
+            logger.debug(f"{catalog_url=}\n{auth=}\n{verify_ssl=}\n{insecure=}")
             resp = requests.get(catalog_url, auth=auth, verify=verify_ssl, timeout=30)
 
             # Check if request was successful
