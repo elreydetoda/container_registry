@@ -1,6 +1,6 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
-from container_registry.agent_functions.shared import get_arg_or_build_value
+from container_registry.agent_functions.shared import get_arg_or_build_value, get_registry_proto_url
 import asyncio
 
 
@@ -9,30 +9,30 @@ class DeleteArguments(TaskArguments):
         super().__init__(command_line, **kwargs)
         self.args = [
             CommandParameter(
-                name="image",
+                name="image_name",
                 type=ParameterType.String,
-                description="Image to delete (e.g., docker://docker.io/myrepo/myimage:tag)",
-                parameter_group_info=[ParameterGroupInfo(required=True)],
+                description="Image name with tag to delete (e.g., myrepo/myimage:tag from docker://localhost:5000/myrepo/myimage:tag)",
+                parameter_group_info=[ParameterGroupInfo(required=True, ui_position=0)],
             ),
             CommandParameter(
                 name="USERNAME",
                 type=ParameterType.String,
                 description="Registry username (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=1)],
                 default_value="",
             ),
             CommandParameter(
                 name="PASSWORD",
                 type=ParameterType.String,
                 description="Registry password/token (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=2)],
                 default_value="",
             ),
             CommandParameter(
                 name="INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure connections",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=3)],
                 default_value=False,
             ),
         ]
@@ -80,7 +80,7 @@ class Delete(CommandBase):
                 cmd.append("--tls-verify=false")
 
             # Add the image
-            image = taskData.args.get_arg("image")
+            image = f"{get_registry_proto_url(taskData=taskData)}/{taskData.args.get_arg('image_name')}"
             cmd.append(image)
 
             # Execute skopeo command

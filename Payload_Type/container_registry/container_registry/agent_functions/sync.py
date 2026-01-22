@@ -1,6 +1,6 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
-from container_registry.agent_functions.shared import get_arg_or_build_value
+from container_registry.agent_functions.shared import get_arg_or_build_value, get_registry_proto_url
 import asyncio
 
 
@@ -9,57 +9,57 @@ class SyncArguments(TaskArguments):
         super().__init__(command_line, **kwargs)
         self.args = [
             CommandParameter(
-                name="source",
+                name="source_image_name",
                 type=ParameterType.String,
-                description="Source transport (e.g., docker://registry.example.com/myimage)",
-                parameter_group_info=[ParameterGroupInfo(required=True)],
+                description="Source image name with tag (e.g., myimage:latest from the configured registry)",
+                parameter_group_info=[ParameterGroupInfo(required=True, ui_position=0)],
             ),
             CommandParameter(
                 name="destination",
                 type=ParameterType.String,
                 description="Destination transport (e.g., dir:/path/to/dir)",
-                parameter_group_info=[ParameterGroupInfo(required=True)],
+                parameter_group_info=[ParameterGroupInfo(required=True, ui_position=1)],
             ),
             CommandParameter(
                 name="SRC_USERNAME",
                 type=ParameterType.String,
                 description="Source registry username (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=2)],
                 default_value="",
             ),
             CommandParameter(
                 name="SRC_PASSWORD",
                 type=ParameterType.String,
                 description="Source registry password/token (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=3)],
                 default_value="",
             ),
             CommandParameter(
                 name="DEST_USERNAME",
                 type=ParameterType.String,
                 description="Destination registry username (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=4)],
                 default_value="",
             ),
             CommandParameter(
                 name="DEST_PASSWORD",
                 type=ParameterType.String,
                 description="Destination registry password/token (optional) -- leave empty to use from provided build parameters",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=5)],
                 default_value="",
             ),
             CommandParameter(
                 name="SRC_INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure source connections",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=6)],
                 default_value=False,
             ),
             CommandParameter(
                 name="DEST_INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure destination connections",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=7)],
                 default_value=False,
             ),
         ]
@@ -96,28 +96,28 @@ class Sync(CommandBase):
             cmd = ["skopeo", "sync"]
 
             # Add source authentication if provided
-            src_username = taskData.args.get_arg("SRC_USERNAME") or get_arg_or_build_value(taskData, "USERNAME")
-            src_password = taskData.args.get_arg("SRC_PASSWORD") or get_arg_or_build_value(taskData, "PASSWORD")
+            src_username = get_arg_or_build_value(taskData, "SRC_USERNAME")
+            src_password = get_arg_or_build_value(taskData, "SRC_PASSWORD")
             if src_username and src_password:
                 cmd.extend(["--src-creds", f"{src_username}:{src_password}"])
 
             # Add destination authentication if provided
-            dest_username = taskData.args.get_arg("DEST_USERNAME") or get_arg_or_build_value(taskData, "USERNAME")
-            dest_password = taskData.args.get_arg("DEST_PASSWORD") or get_arg_or_build_value(taskData, "PASSWORD")
+            dest_username = get_arg_or_build_value(taskData, "DEST_USERNAME")
+            dest_password = get_arg_or_build_value(taskData, "DEST_PASSWORD")
             if dest_username and dest_password:
                 cmd.extend(["--dest-creds", f"{dest_username}:{dest_password}"])
 
             # Add insecure flags if needed
-            src_insecure = taskData.args.get_arg("SRC_INSECURE") or get_arg_or_build_value(taskData, "INSECURE")
+            src_insecure = get_arg_or_build_value(taskData, "SRC_INSECURE")
             if src_insecure:
                 cmd.append("--src-tls-verify=false")
 
-            dest_insecure = taskData.args.get_arg("DEST_INSECURE") or get_arg_or_build_value(taskData, "INSECURE")
+            dest_insecure = get_arg_or_build_value(taskData, "DEST_INSECURE")
             if dest_insecure:
                 cmd.append("--dest-tls-verify=false")
 
             # Add source and destination
-            source = taskData.args.get_arg("source")
+            source = f"{get_registry_proto_url(taskData=taskData)}/{taskData.args.get_arg('source_image_name')}"
             destination = taskData.args.get_arg("destination")
             cmd.extend(["--src", "docker", "--dest", "dir", source, destination])
 
