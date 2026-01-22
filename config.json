@@ -4,7 +4,5 @@
   "exclude_documentation_payload": false,
   "exclude_documentation_c2": false,
   "exclude_agent_icons": false,
-  "remote_images": {
-    "container_registry": "ghcr.io/elreydetoda/container_registry:latest"
-  }
+  "remote_images": {}
 }
