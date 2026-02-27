@@ -3,7 +3,7 @@ from mythic_container.MythicRPC import *
 from container_registry.agent_functions.shared import get_arg_or_build_value, get_registry_base_url
 import json
 import requests
-
+from urllib.parse import urlparse
 
 class ListCatalogArguments(TaskArguments):
     def __init__(self, command_line, **kwargs):
@@ -93,6 +93,37 @@ class ListCatalog(CommandBase):
 
             # Check if request was successful
             if resp.status_code == 200:
+                try:
+                    # Parse JSON response
+                    catalog_data = resp.json()
+                    repositories = catalog_data.get("repositories", [])
+
+                    if repositories:
+                        formatted_output = f"Registry: {registry_url}\n"
+                        formatted_output += f"Repositories ({len(repositories)}):\n\n"
+                        for repo in repositories:
+                            formatted_output += f"  - {repo}\n"
+                    else:
+                        formatted_output = f"Registry: {registry_url}\n\nNo repositories found or empty catalog."
+
+                    await SendMythicRPCResponseCreate(
+                        MythicRPCResponseCreateMessage(
+                            TaskID=taskData.Task.ID,
+                            Response=formatted_output.encode(),
+                        )
+                    )
+                    response.Success = True
+                except json.JSONDecodeError:
+                    # If response is not JSON, might be an error message
+                    await SendMythicRPCResponseCreate(
+                        MythicRPCResponseCreateMessage(
+                            TaskID=taskData.Task.ID,
+                            Response=f"Error parsing response from {registry_url}:\n\n{resp.text}".encode(),
+                        )
+                    )
+            elif resp.status_code == 400:
+                # for when a self-signed certificate is used to make https but not trusted by container
+                resp = requests.get("catalog_url".replace("http://","https://"), auth=auth, verify=verify_ssl, timeout=30)
                 try:
                     # Parse JSON response
                     catalog_data = resp.json()
