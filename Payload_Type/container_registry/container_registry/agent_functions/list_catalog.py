@@ -123,7 +123,8 @@ class ListCatalog(CommandBase):
                     )
             elif resp.status_code == 400:
                 # for when a self-signed certificate is used to make https but not trusted by container
-                resp = requests.get(catalog_url.replace("http://","https://"), auth=auth, verify=verify_ssl, timeout=30)
+                catalog_url = catalog_url.replace("http://","https://")
+                resp = requests.get(catalog_url, auth=auth, verify=verify_ssl, timeout=30)
                 try:
                     # Parse JSON response
                     catalog_data = resp.json()
