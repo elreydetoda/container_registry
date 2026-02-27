@@ -99,7 +99,7 @@ class ListCatalog(CommandBase):
                     repositories = catalog_data.get("repositories", [])
 
                     if repositories:
-                        formatted_output = f"Registry: {registry_url}\n"
+                        formatted_output = f"Registry: {catalog_url}\n"
                         formatted_output += f"Repositories ({len(repositories)}):\n\n"
                         for repo in repositories:
                             formatted_output += f"  - {repo}\n"
@@ -131,7 +131,7 @@ class ListCatalog(CommandBase):
                     repositories = catalog_data.get("repositories", [])
 
                     if repositories:
-                        formatted_output = f"Registry: {registry_url}\n"
+                        formatted_output = f"Registry: {catalog_url}\n"
                         formatted_output += f"Repositories ({len(repositories)}):\n\n"
                         for repo in repositories:
                             formatted_output += f"  - {repo}\n"
