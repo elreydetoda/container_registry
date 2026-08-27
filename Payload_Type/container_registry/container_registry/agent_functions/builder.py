@@ -1,6 +1,7 @@
 from mythic_container.PayloadBuilder import *
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
+from container_registry.agent_functions.shared import normalize_registry_host
 
 
 class ContainerRegistry(PayloadType):
@@ -17,33 +18,33 @@ class ContainerRegistry(PayloadType):
     supports_dynamic_loading = False
     mythic_encrypts = True
     agent_type = AgentType.Service
-    version = "0.0.1"
+    version = "0.0.2"
 
     build_parameters = [
         BuildParameter(
             name="BASE_HOST",
             parameter_type=BuildParameterType.String,
-            description="Default container registry URL (e.g., docker.io, ghcr.io, quay.io)",
+            description="Registry base host (Docker Hub: docker.io)",
             default_value="localhost:5000",
         ),
         BuildParameter(
             name="USERNAME",
             parameter_type=BuildParameterType.String,
-            description="Registry username (optional, can be set per command)",
+            description="Registry username (Docker Hub: your Docker ID; pair with PASSWORD)",
             default_value="",
             required=False,
         ),
         BuildParameter(
             name="PASSWORD",
             parameter_type=BuildParameterType.String,
-            description="Registry password/token (optional, can be set per command)",
+            description="Registry password/token (Docker Hub: use a PAT; pair with USERNAME)",
             default_value="",
             required=False,
         ),
         BuildParameter(
             name="INSECURE",
             parameter_type=BuildParameterType.Boolean,
-            description="Allow insecure (HTTP) registry connections",
+            description="Use HTTP and disable TLS verification (Docker Hub: false)",
             default_value=False,
         ),
     ]
@@ -77,13 +78,13 @@ class ContainerRegistry(PayloadType):
                 Host="ContainerRegistry",
                 Ip="127.0.0.1",
                 IntegrityLevel=3,
-                ExtraInfo=f"Registry: {self.get_parameter('BASE_HOST')}",
+                ExtraInfo=f"Registry: {normalize_registry_host(self.get_parameter('BASE_HOST'))}",
             )
         )
 
         if not create_callback.Success:
             resp.status = BuildStatus.Error
-            resp.build_stderr = f"Failed to create callback: {create_callback.Error}"
+            resp.build_stderr = "Failed to create callback"
             return resp
 
         resp.build_message = "Successfully configured container registry service"

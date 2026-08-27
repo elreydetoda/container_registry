@@ -1,6 +1,12 @@
 from mythic_container.MythicCommandBase import *
 from mythic_container.MythicRPC import *
-from container_registry.agent_functions.shared import get_arg_or_build_value, get_registry_proto_url
+from container_registry.agent_functions.shared import (
+    credential_secrets,
+    get_arg_or_build_value,
+    get_registry_proto_url,
+    redact_sensitive_text,
+    resolve_credentials,
+)
 import asyncio
 
 
@@ -17,14 +23,14 @@ class DeleteArguments(TaskArguments):
             CommandParameter(
                 name="USERNAME",
                 type=ParameterType.String,
-                description="Registry username (optional) -- leave empty to use from provided build parameters",
+                description="Registry username (optional; supply with PASSWORD, or leave both empty to use the build pair)",
                 parameter_group_info=[ParameterGroupInfo(required=False, ui_position=1)],
                 default_value="",
             ),
             CommandParameter(
                 name="PASSWORD",
                 type=ParameterType.String,
-                description="Registry password/token (optional) -- leave empty to use from provided build parameters",
+                description="Registry password/token (optional; supply with USERNAME, or leave both empty to use the build pair)",
                 parameter_group_info=[ParameterGroupInfo(required=False, ui_position=2)],
                 default_value="",
             ),
@@ -49,8 +55,8 @@ class DeleteArguments(TaskArguments):
 class Delete(CommandBase):
     cmd = "delete"
     needs_admin = False
-    help_cmd = "delete"
-    description = "Delete a container image from a registry using skopeo delete"
+    help_cmd = "delete <repository/image:tag>"
+    description = "Delete an image from the configured registry using authenticated skopeo delete"
     version = 1
     supported_ui_features = ["container_registry:delete"]
     author = "@elreydetoda"
@@ -64,15 +70,15 @@ class Delete(CommandBase):
             Completed=True,
         )
 
+        secrets = credential_secrets(taskData)
         try:
             # Build skopeo command
             cmd = ["skopeo", "delete"]
 
             # Add authentication if provided
-            username = get_arg_or_build_value(taskData, "USERNAME")
-            password = get_arg_or_build_value(taskData, "PASSWORD")
-            if username and password:
-                cmd.extend(["--creds", f"{username}:{password}"])
+            credentials = resolve_credentials(taskData)
+            if credentials:
+                cmd.extend(["--creds", f"{credentials[0]}:{credentials[1]}"])
 
             # Add insecure flag if needed
             insecure = get_arg_or_build_value(taskData, "INSECURE")
@@ -93,8 +99,8 @@ class Delete(CommandBase):
 
             # Process output
             if proc.returncode == 0:
-                output = stdout.decode()
-                error_output = stderr.decode()
+                output = redact_sensitive_text(stdout.decode(errors="replace"), secrets)
+                error_output = redact_sensitive_text(stderr.decode(errors="replace"), secrets)
                 result = f"Successfully deleted {image}"
                 if output:
                     result += f"\n\nOutput:\n{output}"
@@ -109,7 +115,7 @@ class Delete(CommandBase):
                 )
                 response.Success = True
             else:
-                error_msg = stderr.decode()
+                error_msg = redact_sensitive_text(stderr.decode(errors="replace"), secrets)
                 await SendMythicRPCResponseCreate(
                     MythicRPCResponseCreateMessage(
                         TaskID=taskData.Task.ID,
@@ -121,7 +127,7 @@ class Delete(CommandBase):
             await SendMythicRPCResponseCreate(
                 MythicRPCResponseCreateMessage(
                     TaskID=taskData.Task.ID,
-                    Response=f"Exception occurred: {str(e)}".encode(),
+                    Response=f"Exception occurred: {redact_sensitive_text(e, secrets)}".encode(),
                 )
             )
 

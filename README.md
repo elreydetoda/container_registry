@@ -14,7 +14,8 @@ This payload type is a **service payload** (similar to the BloodHound payload) t
 - **List all repositories** in a registry using Docker Registry HTTP API V2
 - **List tags** for repositories
 - Support for authenticated and insecure registry connections
-- Automatic fallback to build parameters for credentials
+- Atomic credential fallback: use a complete command pair or a complete build pair
+- Docker Hub authentication with Docker IDs and personal access tokens (PATs)
 - Integrated into Mythic's web UI
 
 ## Installation
@@ -63,6 +64,25 @@ git clone https://github.com/elreydetoda/container_registry
 
 5. Create the payload - this will establish a callback in Mythic
 
+### Docker Hub setup
+
+Create a dedicated `container_registry` payload/callback for Docker Hub with these exact build settings:
+
+```text
+BASE_HOST=docker.io
+USERNAME=<your Docker Hub username>
+PASSWORD=<your Docker Hub PAT>
+INSECURE=false
+```
+
+Use the PAT as the password; do not use the Docker Hub account password. To copy the wrapper image used by this project's QA into the public test repository, set the command destination to:
+
+```text
+<username>/testing:<tag>
+```
+
+Registry hosts are callback-scoped. Create another callback for another registry instead of supplying a command-level host override.
+
 ### Available Commands
 
 #### copy
@@ -72,8 +92,8 @@ Upload a container_wrapper payload to the configured registry. This command is s
 **Parameters:**
 - `source` (Payload): Select from available container_wrapper payloads via dynamic dropdown
 - `destination_name`: Destination image name with tag (e.g., `alpine:latest`, `myapp:v1.0`)
-- `DEST_USERNAME`: Destination registry username (optional, falls back to build parameter)
-- `DEST_PASSWORD`: Destination registry password/token (optional, falls back to build parameter)
+- `DEST_USERNAME`: Destination registry username (optional; supply together with `DEST_PASSWORD`)
+- `DEST_PASSWORD`: Destination registry password/token (optional; supply together with `DEST_USERNAME`)
 - `DEST_INSECURE`: Allow insecure destination connections (optional)
 
 **Example:**
@@ -87,6 +107,8 @@ Upload a container_wrapper payload to the configured registry. This command is s
 ```
 
 **Note:** The source payload is automatically retrieved from Mythic's payload store as an OCI archive and uploaded to the registry using `skopeo copy`.
+
+When both command credentials are empty, `copy` uses the complete build credential pair. Supplying only one command credential is rejected; command and build values are never mixed.
 
 #### inspect
 
@@ -144,7 +166,7 @@ List all repositories in a registry using the Docker Registry HTTP API V2 `/v2/_
 }
 ```
 
-**Note:** This command uses Python's `requests` library to make HTTP calls directly to the registry API, not skopeo.
+**Note:** This command uses Python's `requests` library to call only the standard `/v2/_catalog` Registry HTTP API V2 endpoint. Vendor-specific catalog APIs are intentionally out of scope. Hosted registries, including Docker Hub, that do not expose this endpoint will likely reject the request.
 
 #### list_tags
 
@@ -192,12 +214,14 @@ container_registry/
 
 The `shared.py` module provides common utilities:
 - `get_arg_or_build_value()`: Retrieves parameter values with automatic fallback to build parameters
-- `get_registry_base_url()`: Constructs HTTP/HTTPS registry URLs
-- `get_registry_proto_url()`: Constructs docker:// protocol URLs for skopeo
+- `normalize_registry_host()`: Removes surrounding whitespace, schemes, and trailing slashes; canonicalizes Docker Hub aliases to `docker.io`
+- `resolve_credentials()`: Selects one complete command or build credential pair without mixing sources
+- `get_registry_base_url()`: Constructs normalized HTTP/HTTPS registry URLs
+- `get_registry_proto_url()`: Constructs normalized `docker://` URLs for skopeo
 
 ### Command Parameter Fallback
 
-All commands support automatic fallback to build parameters. If a command parameter is empty or not provided, the system automatically uses the value from the build configuration. This allows you to configure default credentials once during payload creation and optionally override them per-command.
+Credential fallback is atomic. When both command username and password/token are supplied, that pair overrides the build credentials. When both command values are empty, the complete build pair is used. A partial pair at either source is rejected, and a command username is never combined with a build password (or vice versa).
 
 ## Development History
 
