@@ -6,6 +6,7 @@ from container_registry.agent_functions.shared import (
     get_registry_proto_url,
     redact_sensitive_text,
     resolve_credentials,
+    with_authentication_provenance,
 )
 import json
 import asyncio
@@ -22,31 +23,17 @@ class InspectArguments(TaskArguments):
                 parameter_group_info=[ParameterGroupInfo(required=True, ui_position=0)],
             ),
             CommandParameter(
-                name="USERNAME",
-                type=ParameterType.String,
-                description="Registry username (optional; supply with PASSWORD, or leave both empty to use the build pair)",
-                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=1)],
-                default_value="",
-            ),
-            CommandParameter(
-                name="PASSWORD",
-                type=ParameterType.String,
-                description="Registry password/token (optional; supply with USERNAME, or leave both empty to use the build pair)",
-                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=2)],
-                default_value="",
-            ),
-            CommandParameter(
                 name="INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure connections",
-                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=3)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=1)],
                 default_value=False,
             ),
             CommandParameter(
                 name="raw",
                 type=ParameterType.Boolean,
                 description="Return raw manifest instead of formatted output",
-                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=4)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=2)],
                 default_value=False,
             ),
         ]
@@ -64,7 +51,7 @@ class Inspect(CommandBase):
     cmd = "inspect"
     needs_admin = False
     help_cmd = "inspect (Docker Hub example: <username>/testing:<tag>)"
-    description = "Inspect an image in the configured registry using authenticated skopeo inspect"
+    description = "Inspect an image using callback build credentials, Mythic user secrets, or anonymous access"
     version = 1
     supported_ui_features = ["container_registry:inspect"]
     author = "@elreydetoda"
@@ -79,14 +66,20 @@ class Inspect(CommandBase):
         )
 
         secrets = credential_secrets(taskData)
+        resolved_credentials = None
         try:
             # Build skopeo command
             cmd = ["skopeo", "inspect"]
 
             # Add authentication if provided
-            credentials = resolve_credentials(taskData)
-            if credentials:
-                cmd.extend(["--creds", f"{credentials[0]}:{credentials[1]}"])
+            resolved_credentials = resolve_credentials(taskData)
+            if resolved_credentials.pair:
+                cmd.extend(
+                    [
+                        "--creds",
+                        f"{resolved_credentials.username}:{resolved_credentials.password}",
+                    ]
+                )
 
             # Add insecure flag if needed
             insecure = get_arg_or_build_value(taskData, "INSECURE")
@@ -119,7 +112,10 @@ class Inspect(CommandBase):
                     await SendMythicRPCResponseCreate(
                         MythicRPCResponseCreateMessage(
                             TaskID=taskData.Task.ID,
-                            Response=f"Successfully inspected {image}:\n\n{formatted_output}".encode(),
+                            Response=with_authentication_provenance(
+                                f"Successfully inspected {image}:\n\n{formatted_output}",
+                                resolved_credentials,
+                            ).encode(),
                         )
                     )
                     response.Success = True
@@ -128,7 +124,10 @@ class Inspect(CommandBase):
                     await SendMythicRPCResponseCreate(
                         MythicRPCResponseCreateMessage(
                             TaskID=taskData.Task.ID,
-                            Response=f"Successfully inspected {image}:\n\n{output}".encode(),
+                            Response=with_authentication_provenance(
+                                f"Successfully inspected {image}:\n\n{output}",
+                                resolved_credentials,
+                            ).encode(),
                         )
                     )
                     response.Success = True
@@ -137,15 +136,21 @@ class Inspect(CommandBase):
                 await SendMythicRPCResponseCreate(
                     MythicRPCResponseCreateMessage(
                         TaskID=taskData.Task.ID,
-                        Response=f"Error inspecting {image}:\n{error_msg}".encode(),
+                        Response=with_authentication_provenance(
+                            f"Error inspecting {image}:\n{error_msg}",
+                            resolved_credentials,
+                        ).encode(),
                     )
                 )
 
         except Exception as e:
+            message = f"Exception occurred: {redact_sensitive_text(e, secrets)}"
+            if resolved_credentials is not None:
+                message = with_authentication_provenance(message, resolved_credentials)
             await SendMythicRPCResponseCreate(
                 MythicRPCResponseCreateMessage(
                     TaskID=taskData.Task.ID,
-                    Response=f"Exception occurred: {redact_sensitive_text(e, secrets)}".encode(),
+                    Response=message.encode(),
                 )
             )
 

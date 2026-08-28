@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
@@ -11,9 +12,36 @@ DOCKER_HUB_ALIASES = {
     "registry-1.docker.io",
 }
 
+OCI_REG_USERNAME = "OCI_REG_USERNAME"
+OCI_REG_PASSWORD = "OCI_REG_PASSWORD"
+
+AUTH_SOURCE_BUILD = "callback build credentials (legacy)"
+AUTH_SOURCE_USER_SECRETS = "Mythic user secrets (OCI_REG_USERNAME/OCI_REG_PASSWORD)"
+AUTH_SOURCE_FORCED_ANONYMOUS = "anonymous (forced by ANONYMOUS=true)"
+AUTH_SOURCE_IMPLICIT_ANONYMOUS = "anonymous (no credentials configured)"
+
 
 class CredentialConfigurationError(ValueError):
     """Raised when a credential source contains only half of a pair."""
+
+
+@dataclass(frozen=True)
+class ResolvedCredentials:
+    """A complete credential pair or an explicit anonymous resolution."""
+
+    username: str | None
+    password: str | None
+    source: str
+
+    @property
+    def pair(self) -> tuple[str, str] | None:
+        if self.username is None or self.password is None:
+            return None
+        return self.username, self.password
+
+    @property
+    def provenance(self) -> str:
+        return f"Authentication: {self.source}"
 
 
 def get_build_info(all_data: PTTaskMessageAllData, key_requested: str) -> Any | None:
@@ -103,25 +131,19 @@ def _normalized_credential(value: Any) -> str | None:
     return normalized or None
 
 
-def resolve_credentials(
-    task_data: PTTaskMessageAllData,
-    command_username_key: str = "USERNAME",
-    command_password_key: str = "PASSWORD",
-) -> tuple[str, str] | None:
-    """Resolve one complete command or build credential pair without mixing."""
-    command_username = None
-    command_password = None
-    if task_data.args.has_arg(command_username_key):
-        command_username = _normalized_credential(task_data.args.get_arg(command_username_key))
-    if task_data.args.has_arg(command_password_key):
-        command_password = _normalized_credential(task_data.args.get_arg(command_password_key))
+def _build_anonymous(task_data: PTTaskMessageAllData) -> bool:
+    value = get_build_info(task_data, "ANONYMOUS")
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
-    if command_username or command_password:
-        if not command_username or not command_password:
-            raise CredentialConfigurationError(
-                "Command credentials must include both username and password/token"
-            )
-        return command_username, command_password
+
+def resolve_credentials(task_data: PTTaskMessageAllData) -> ResolvedCredentials:
+    """Resolve forced anonymous, build, user-secret, or implicit anonymous auth."""
+    if _build_anonymous(task_data):
+        return ResolvedCredentials(None, None, AUTH_SOURCE_FORCED_ANONYMOUS)
 
     build_username = _normalized_credential(get_build_info(task_data, "USERNAME"))
     build_password = _normalized_credential(get_build_info(task_data, "PASSWORD"))
@@ -130,26 +152,45 @@ def resolve_credentials(
             raise CredentialConfigurationError(
                 "Build credentials must include both username and password/token"
             )
-        return build_username, build_password
+        return ResolvedCredentials(build_username, build_password, AUTH_SOURCE_BUILD)
 
-    return None
+    user_secrets = getattr(task_data, "Secrets", None) or {}
+    secret_username = _normalized_credential(user_secrets.get(OCI_REG_USERNAME))
+    secret_password = _normalized_credential(user_secrets.get(OCI_REG_PASSWORD))
+    if secret_username or secret_password:
+        if not secret_username or not secret_password:
+            raise CredentialConfigurationError(
+                "Mythic user secrets must include both OCI_REG_USERNAME and OCI_REG_PASSWORD"
+            )
+        return ResolvedCredentials(
+            secret_username,
+            secret_password,
+            AUTH_SOURCE_USER_SECRETS,
+        )
+
+    return ResolvedCredentials(None, None, AUTH_SOURCE_IMPLICIT_ANONYMOUS)
 
 
-def credential_secrets(
-    task_data: PTTaskMessageAllData,
-    command_password_key: str = "PASSWORD",
-) -> tuple[str, ...]:
+def credential_secrets(task_data: PTTaskMessageAllData) -> tuple[str, ...]:
     """Collect password values solely for redacting failures and diagnostics."""
     values: list[str] = []
-    if task_data.args.has_arg(command_password_key):
-        command_password = _normalized_credential(task_data.args.get_arg(command_password_key))
-        if command_password:
-            values.append(command_password)
-
     build_password = _normalized_credential(get_build_info(task_data, "PASSWORD"))
-    if build_password and build_password not in values:
+    if build_password:
         values.append(build_password)
+
+    user_secrets = getattr(task_data, "Secrets", None) or {}
+    secret_password = _normalized_credential(user_secrets.get(OCI_REG_PASSWORD))
+    if secret_password and secret_password not in values:
+        values.append(secret_password)
     return tuple(values)
+
+
+def with_authentication_provenance(
+    message: Any,
+    credentials: ResolvedCredentials,
+) -> str:
+    """Prefix a task result with the safe authentication-source label."""
+    return f"{credentials.provenance}\n{message}"
 
 
 def redact_sensitive_text(text: Any, secrets: Iterable[str] = ()) -> str:

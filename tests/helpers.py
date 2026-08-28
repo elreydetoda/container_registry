@@ -12,7 +12,7 @@ class FakeArgs:
         return self.values.get(name)
 
 
-def make_task(arguments=None, build_parameters=None, task_id=100):
+def make_task(arguments=None, build_parameters=None, secrets=None, task_id=100):
     build_parameters = build_parameters or {}
     return SimpleNamespace(
         args=FakeArgs(arguments),
@@ -22,6 +22,7 @@ def make_task(arguments=None, build_parameters=None, task_id=100):
         ],
         Task=SimpleNamespace(ID=task_id),
         Callback=SimpleNamespace(ID=1),
+        Secrets=secrets or {},
     )
 
 
@@ -33,4 +34,3 @@ class FakeProcess:
 
     async def communicate(self):
         return self._stdout, self._stderr
-

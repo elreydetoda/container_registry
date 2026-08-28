@@ -6,6 +6,7 @@ from container_registry.agent_functions.shared import (
     get_registry_proto_url,
     redact_sensitive_text,
     resolve_credentials,
+    with_authentication_provenance,
 )
 import asyncio
 from tempfile import NamedTemporaryFile
@@ -33,20 +34,6 @@ class CopyArguments(TaskArguments):
                 parameter_group_info=[ParameterGroupInfo(
                     required=True
                 )]
-            ),
-            CommandParameter(
-                name="DEST_USERNAME",
-                type=ParameterType.String,
-                description="Destination username (optional; supply with DEST_PASSWORD, or leave both empty to use the build pair)",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
-                default_value="",
-            ),
-            CommandParameter(
-                name="DEST_PASSWORD",
-                type=ParameterType.String,
-                description="Destination password/token (optional; supply with DEST_USERNAME, or leave both empty to use the build pair)",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
-                default_value="",
             ),
             CommandParameter(
                 name="DEST_INSECURE",
@@ -94,7 +81,7 @@ class Copy(CommandBase):
     cmd = "copy"
     needs_admin = False
     help_cmd = "copy (Docker Hub destination: <username>/testing:<tag>)"
-    description = "Upload a container wrapper image to the configured registry using authenticated skopeo copy"
+    description = "Upload a container wrapper image using callback build credentials, Mythic user secrets, or anonymous access"
     version = 1
     supported_ui_features = ["container_registry:copy"]
     author = "@elreydetoda"
@@ -108,15 +95,21 @@ class Copy(CommandBase):
             Completed=True,
         )
 
-        secrets = credential_secrets(taskData, "DEST_PASSWORD")
+        secrets = credential_secrets(taskData)
+        resolved_credentials = None
         try:
             # Build skopeo command
             cmd = ["skopeo", "copy"]
 
             # Add destination authentication if provided
-            credentials = resolve_credentials(taskData, "DEST_USERNAME", "DEST_PASSWORD")
-            if credentials:
-                cmd.extend(["--dest-creds", f"{credentials[0]}:{credentials[1]}"])
+            resolved_credentials = resolve_credentials(taskData)
+            if resolved_credentials.pair:
+                cmd.extend(
+                    [
+                        "--dest-creds",
+                        f"{resolved_credentials.username}:{resolved_credentials.password}",
+                    ]
+                )
 
             dest_insecure = get_arg_or_build_value(taskData, "DEST_INSECURE")
             if dest_insecure:
@@ -183,7 +176,9 @@ class Copy(CommandBase):
                     await SendMythicRPCResponseCreate(
                         MythicRPCResponseCreateMessage(
                             TaskID=taskData.Task.ID,
-                            Response=result.encode(),
+                            Response=with_authentication_provenance(
+                                result, resolved_credentials
+                            ).encode(),
                         )
                     )
                     response.Success = True
@@ -192,15 +187,21 @@ class Copy(CommandBase):
                     await SendMythicRPCResponseCreate(
                         MythicRPCResponseCreateMessage(
                             TaskID=taskData.Task.ID,
-                            Response=f"Error copying {source} to {destination}:\n{error_msg}".encode(),
+                            Response=with_authentication_provenance(
+                                f"Error copying {source} to {destination}:\n{error_msg}",
+                                resolved_credentials,
+                            ).encode(),
                         )
                     )
 
         except Exception as e:
+            message = f"Exception occurred: {redact_sensitive_text(e, secrets)}"
+            if resolved_credentials is not None:
+                message = with_authentication_provenance(message, resolved_credentials)
             await SendMythicRPCResponseCreate(
                 MythicRPCResponseCreateMessage(
                     TaskID=taskData.Task.ID,
-                    Response=f"Exception occurred: {redact_sensitive_text(e, secrets)}".encode(),
+                    Response=message.encode(),
                 )
             )
 

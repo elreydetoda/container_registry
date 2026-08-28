@@ -6,6 +6,7 @@ from container_registry.agent_functions.shared import (
     get_registry_proto_url,
     redact_sensitive_text,
     resolve_credentials,
+    with_authentication_provenance,
 )
 import asyncio
 import json
@@ -22,24 +23,10 @@ class ListTagsArguments(TaskArguments):
                 parameter_group_info=[ParameterGroupInfo(required=True, ui_position=0)],
             ),
             CommandParameter(
-                name="USERNAME",
-                type=ParameterType.String,
-                description="Registry username (optional; supply with PASSWORD, or leave both empty to use the build pair)",
-                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=1)],
-                default_value="",
-            ),
-            CommandParameter(
-                name="PASSWORD",
-                type=ParameterType.String,
-                description="Registry password/token (optional; supply with USERNAME, or leave both empty to use the build pair)",
-                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=2)],
-                default_value="",
-            ),
-            CommandParameter(
                 name="INSECURE",
                 type=ParameterType.Boolean,
                 description="Allow insecure connections",
-                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=3)],
+                parameter_group_info=[ParameterGroupInfo(required=False, ui_position=1)],
                 default_value=False,
             ),
         ]
@@ -57,7 +44,7 @@ class ListTags(CommandBase):
     cmd = "list_tags"
     needs_admin = False
     help_cmd = "list_tags <repository/image>"
-    description = "List tags in the configured registry using authenticated skopeo list-tags"
+    description = "List tags using callback build credentials, Mythic user secrets, or anonymous access"
     version = 1
     supported_ui_features = ["container_registry:list_tags"]
     author = "@elreydetoda"
@@ -72,14 +59,20 @@ class ListTags(CommandBase):
         )
 
         secrets = credential_secrets(taskData)
+        resolved_credentials = None
         try:
             # Build skopeo command
             cmd = ["skopeo", "list-tags"]
 
             # Add authentication if provided
-            credentials = resolve_credentials(taskData)
-            if credentials:
-                cmd.extend(["--creds", f"{credentials[0]}:{credentials[1]}"])
+            resolved_credentials = resolve_credentials(taskData)
+            if resolved_credentials.pair:
+                cmd.extend(
+                    [
+                        "--creds",
+                        f"{resolved_credentials.username}:{resolved_credentials.password}",
+                    ]
+                )
 
             # Add insecure flag if needed
             insecure = get_arg_or_build_value(taskData, "INSECURE")
@@ -113,7 +106,9 @@ class ListTags(CommandBase):
                     await SendMythicRPCResponseCreate(
                         MythicRPCResponseCreateMessage(
                             TaskID=taskData.Task.ID,
-                            Response=formatted_output.encode(),
+                            Response=with_authentication_provenance(
+                                formatted_output, resolved_credentials
+                            ).encode(),
                         )
                     )
                     response.Success = True
@@ -122,7 +117,10 @@ class ListTags(CommandBase):
                     await SendMythicRPCResponseCreate(
                         MythicRPCResponseCreateMessage(
                             TaskID=taskData.Task.ID,
-                            Response=f"Tags for {repository}:\n\n{output}".encode(),
+                            Response=with_authentication_provenance(
+                                f"Tags for {repository}:\n\n{output}",
+                                resolved_credentials,
+                            ).encode(),
                         )
                     )
                     response.Success = True
@@ -131,15 +129,21 @@ class ListTags(CommandBase):
                 await SendMythicRPCResponseCreate(
                     MythicRPCResponseCreateMessage(
                         TaskID=taskData.Task.ID,
-                        Response=f"Error listing tags for {repository}:\n{error_msg}".encode(),
+                        Response=with_authentication_provenance(
+                            f"Error listing tags for {repository}:\n{error_msg}",
+                            resolved_credentials,
+                        ).encode(),
                     )
                 )
 
         except Exception as e:
+            message = f"Exception occurred: {redact_sensitive_text(e, secrets)}"
+            if resolved_credentials is not None:
+                message = with_authentication_provenance(message, resolved_credentials)
             await SendMythicRPCResponseCreate(
                 MythicRPCResponseCreateMessage(
                     TaskID=taskData.Task.ID,
-                    Response=f"Exception occurred: {redact_sensitive_text(e, secrets)}".encode(),
+                    Response=message.encode(),
                 )
             )
 

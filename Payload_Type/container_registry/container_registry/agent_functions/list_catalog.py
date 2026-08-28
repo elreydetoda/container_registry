@@ -10,6 +10,7 @@ from container_registry.agent_functions.shared import (
     get_registry_base_url,
     redact_sensitive_text,
     resolve_credentials,
+    with_authentication_provenance,
 )
 
 
@@ -21,20 +22,6 @@ class ListCatalogArguments(TaskArguments):
                 name="BASE_HOST",
                 type=ParameterType.String,
                 description="Registry base host -- leave empty to use the callback build parameter",
-                default_value="",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
-            ),
-            CommandParameter(
-                name="USERNAME",
-                type=ParameterType.String,
-                description="Registry username (optional; supply with PASSWORD, or leave both empty to use the build pair)",
-                default_value="",
-                parameter_group_info=[ParameterGroupInfo(required=False)],
-            ),
-            CommandParameter(
-                name="PASSWORD",
-                type=ParameterType.String,
-                description="Registry password/token (optional; supply with USERNAME, or leave both empty to use the build pair)",
                 default_value="",
                 parameter_group_info=[ParameterGroupInfo(required=False)],
             ),
@@ -79,17 +66,18 @@ class ListCatalog(CommandBase):
             Completed=True,
         )
         secrets = credential_secrets(taskData)
+        resolved_credentials = None
 
         try:
             registry_host = get_arg_or_build_value(taskData, "BASE_HOST")
             insecure = get_arg_or_build_value(taskData, "INSECURE")
-            credentials = resolve_credentials(taskData)
+            resolved_credentials = resolve_credentials(taskData)
             registry_url = get_registry_base_url(registry_host, insecure)
             catalog_url = f"{registry_url}/v2/_catalog"
 
             registry_response = requests.get(
                 catalog_url,
-                auth=credentials,
+                auth=resolved_credentials.pair,
                 verify=not insecure,
                 timeout=30,
             )
@@ -102,8 +90,9 @@ class ListCatalog(CommandBase):
                 await SendMythicRPCResponseCreate(
                     MythicRPCResponseCreateMessage(
                         TaskID=taskData.Task.ID,
-                        Response=(
-                            f"Error accessing registry catalog at {registry_url}:\n{safe_detail}"
+                        Response=with_authentication_provenance(
+                            f"Error accessing registry catalog at {registry_url}:\n{safe_detail}",
+                            resolved_credentials,
                         ).encode(),
                     )
                 )
@@ -116,8 +105,9 @@ class ListCatalog(CommandBase):
                 await SendMythicRPCResponseCreate(
                     MythicRPCResponseCreateMessage(
                         TaskID=taskData.Task.ID,
-                        Response=(
-                            f"Error parsing response from {registry_url}:\n\n{safe_text}"
+                        Response=with_authentication_provenance(
+                            f"Error parsing response from {registry_url}:\n\n{safe_text}",
+                            resolved_credentials,
                         ).encode(),
                     )
                 )
@@ -136,18 +126,22 @@ class ListCatalog(CommandBase):
             await SendMythicRPCResponseCreate(
                 MythicRPCResponseCreateMessage(
                     TaskID=taskData.Task.ID,
-                    Response=redact_sensitive_text(formatted_output, secrets).encode(),
+                    Response=with_authentication_provenance(
+                        redact_sensitive_text(formatted_output, secrets),
+                        resolved_credentials,
+                    ).encode(),
                 )
             )
             response.Success = True
 
         except Exception as error:
+            message = f"Exception occurred: {redact_sensitive_text(error, secrets)}"
+            if resolved_credentials is not None:
+                message = with_authentication_provenance(message, resolved_credentials)
             await SendMythicRPCResponseCreate(
                 MythicRPCResponseCreateMessage(
                     TaskID=taskData.Task.ID,
-                    Response=(
-                        f"Exception occurred: {redact_sensitive_text(error, secrets)}"
-                    ).encode(),
+                    Response=message.encode(),
                 )
             )
 

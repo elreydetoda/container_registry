@@ -14,7 +14,8 @@ This payload type is a **service payload** (similar to the BloodHound payload) t
 - **List all repositories** in a registry using Docker Registry HTTP API V2
 - **List tags** for repositories
 - Support for authenticated and insecure registry connections
-- Atomic credential fallback: use a complete command pair or a complete build pair
+- Mythic-native, issuing-operator authentication through user secrets
+- Atomic build-first credential resolution with explicit anonymous mode
 - Docker Hub authentication with Docker IDs and personal access tokens (PATs)
 - Integrated into Mythic's web UI
 
@@ -58,21 +59,30 @@ git clone https://github.com/elreydetoda/container_registry
 3. Select "container_registry" as the payload type
 4. Configure the build parameters:
    - **BASE_HOST**: Default container registry URL (e.g., `localhost:5000`, `docker.io`, `ghcr.io`, `quay.io`)
-   - **USERNAME**: Optional default username for registry authentication
-   - **PASSWORD**: Optional default password/token for registry authentication
+   - **USERNAME**: Deprecated callback username; a complete build pair overrides user secrets
+   - **PASSWORD**: Deprecated callback password/token; supply together with `USERNAME`
    - **INSECURE**: Allow insecure (HTTP) registry connections
+   - **ANONYMOUS**: Force unauthenticated access and ignore all configured credentials
 
 5. Create the payload - this will establish a callback in Mythic
 
 ### Docker Hub setup
 
-Create a dedicated `container_registry` payload/callback for Docker Hub with these exact build settings:
+In the Mythic UI, open the issuing operator's settings, select the red-key user-secret editor, and configure these exact case-sensitive keys:
+
+```text
+OCI_REG_USERNAME=<your Docker Hub username>
+OCI_REG_PASSWORD=<your Docker Hub PAT>
+```
+
+Then create a dedicated `container_registry` payload/callback for Docker Hub with these exact build settings:
 
 ```text
 BASE_HOST=docker.io
-USERNAME=<your Docker Hub username>
-PASSWORD=<your Docker Hub PAT>
+USERNAME=
+PASSWORD=
 INSECURE=false
+ANONYMOUS=false
 ```
 
 Use the PAT as the password; do not use the Docker Hub account password. To copy the wrapper image used by this project's QA into the public test repository, set the command destination to:
@@ -83,6 +93,20 @@ Use the PAT as the password; do not use the Docker Hub account password. To copy
 
 Registry hosts are callback-scoped. Create another callback for another registry instead of supplying a command-level host override.
 
+For an anonymous HTTP registry, create a separate callback such as:
+
+```text
+BASE_HOST=10.9.20.11:32000
+USERNAME=
+PASSWORD=
+INSECURE=true
+ANONYMOUS=true
+```
+
+`ANONYMOUS=true` ignores both legacy build credentials and Mythic user secrets. When it is false, a complete build pair is authoritative; only when both build values are empty does the service read `OCI_REG_USERNAME` and `OCI_REG_PASSWORD` from the operator who issued the task. A partial pair at either authoritative source is rejected. If neither source is configured, the operation proceeds anonymously.
+
+Every task response identifies only the source used (legacy callback build credentials, Mythic user secrets, forced anonymous, or unconfigured anonymous). Credential values and authentication arguments are never included.
+
 ### Available Commands
 
 #### copy
@@ -92,23 +116,19 @@ Upload a container_wrapper payload to the configured registry. This command is s
 **Parameters:**
 - `source` (Payload): Select from available container_wrapper payloads via dynamic dropdown
 - `destination_name`: Destination image name with tag (e.g., `alpine:latest`, `myapp:v1.0`)
-- `DEST_USERNAME`: Destination registry username (optional; supply together with `DEST_PASSWORD`)
-- `DEST_PASSWORD`: Destination registry password/token (optional; supply together with `DEST_USERNAME`)
 - `DEST_INSECURE`: Allow insecure destination connections (optional)
 
 **Example:**
 ```json
 {
   "source": "mycontainer.tar - My wrapped payload",
-  "destination_name": "malware/backdoor:latest",
-  "DEST_USERNAME": "myuser",
-  "DEST_PASSWORD": "mytoken"
+  "destination_name": "malware/backdoor:latest"
 }
 ```
 
 **Note:** The source payload is automatically retrieved from Mythic's payload store as an OCI archive and uploaded to the registry using `skopeo copy`.
 
-When both command credentials are empty, `copy` uses the complete build credential pair. Supplying only one command credential is rejected; command and build values are never mixed.
+Authentication is callback/operator scoped; `copy` does not accept task credential values.
 
 #### inspect
 
@@ -116,8 +136,6 @@ Inspect a container image in the configured registry.
 
 **Parameters:**
 - `image_name`: Image name with tag (e.g., `alpine:latest`, `library/alpine:3.18`)
-- `USERNAME`: Registry username (optional, falls back to build parameter)
-- `PASSWORD`: Registry password/token (optional, falls back to build parameter)
 - `INSECURE`: Allow insecure connections (optional, falls back to build parameter)
 - `raw`: Return raw manifest instead of formatted output (optional)
 
@@ -136,8 +154,6 @@ Delete a container image from the configured registry.
 
 **Parameters:**
 - `image_name`: Image name with tag (e.g., `myrepo/myimage:tag`)
-- `USERNAME`: Registry username (optional, falls back to build parameter)
-- `PASSWORD`: Registry password/token (optional, falls back to build parameter)
 - `INSECURE`: Allow insecure connections (optional, falls back to build parameter)
 
 **Example:**
@@ -153,16 +169,12 @@ List all repositories in a registry using the Docker Registry HTTP API V2 `/v2/_
 
 **Parameters:**
 - `BASE_HOST`: Registry URL (optional, falls back to build parameter - e.g., `registry-1.docker.io`, `ghcr.io`, `localhost:5000`)
-- `USERNAME`: Registry username (optional, falls back to build parameter)
-- `PASSWORD`: Registry password/token (optional, falls back to build parameter)
 - `INSECURE`: Allow insecure connections/skip TLS verification (optional, falls back to build parameter)
 
 **Example:**
 ```json
 {
-  "BASE_HOST": "myregistry.com:5000",
-  "USERNAME": "myuser",
-  "PASSWORD": "mytoken"
+  "BASE_HOST": "myregistry.com:5000"
 }
 ```
 
@@ -174,8 +186,6 @@ List all tags for a repository in the configured registry.
 
 **Parameters:**
 - `image_name`: Repository image name (e.g., `alpine`, `library/alpine`, `myrepo/myimage`)
-- `USERNAME`: Registry username (optional, falls back to build parameter)
-- `PASSWORD`: Registry password/token (optional, falls back to build parameter)
 - `INSECURE`: Allow insecure connections (optional, falls back to build parameter)
 
 **Example:**
@@ -215,13 +225,13 @@ container_registry/
 The `shared.py` module provides common utilities:
 - `get_arg_or_build_value()`: Retrieves parameter values with automatic fallback to build parameters
 - `normalize_registry_host()`: Removes surrounding whitespace, schemes, and trailing slashes; canonicalizes Docker Hub aliases to `docker.io`
-- `resolve_credentials()`: Selects one complete command or build credential pair without mixing sources
+- `resolve_credentials()`: Selects forced anonymous, complete build credentials, operator user secrets, or implicit anonymous access without mixing sources
 - `get_registry_base_url()`: Constructs normalized HTTP/HTTPS registry URLs
 - `get_registry_proto_url()`: Constructs normalized `docker://` URLs for skopeo
 
-### Command Parameter Fallback
+### Authentication Resolution
 
-Credential fallback is atomic. When both command username and password/token are supplied, that pair overrides the build credentials. When both command values are empty, the complete build pair is used. A partial pair at either source is rejected, and a command username is never combined with a build password (or vice versa).
+Credential resolution is atomic and build-first. Forced anonymous mode bypasses all credentials. Otherwise, a complete legacy callback build pair wins; if the build pair is absent, the issuing operator's complete `OCI_REG_USERNAME` / `OCI_REG_PASSWORD` pair is used. A partial authoritative pair is rejected, values are never mixed, and no configured pair means explicit anonymous execution. Command tasking contains no credential parameters.
 
 ## Development History
 

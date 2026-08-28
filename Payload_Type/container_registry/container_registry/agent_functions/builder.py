@@ -14,11 +14,13 @@ class ContainerRegistry(PayloadType):
     note = """
     This is a 3rd party service payload that wraps skopeo
     (https://github.com/containers/skopeo) for OCI container registry operations.
+    Configure OCI_REG_USERNAME and OCI_REG_PASSWORD in Mythic user secrets when
+    deprecated callback build credentials are not supplied.
     """
     supports_dynamic_loading = False
     mythic_encrypts = True
     agent_type = AgentType.Service
-    version = "0.0.2"
+    version = "0.0.3"
 
     build_parameters = [
         BuildParameter(
@@ -30,14 +32,20 @@ class ContainerRegistry(PayloadType):
         BuildParameter(
             name="USERNAME",
             parameter_type=BuildParameterType.String,
-            description="Registry username (Docker Hub: your Docker ID; pair with PASSWORD)",
+            description=(
+                "Deprecated callback credential username. When this and PASSWORD are set, "
+                "the build pair overrides Mythic user secrets."
+            ),
             default_value="",
             required=False,
         ),
         BuildParameter(
             name="PASSWORD",
             parameter_type=BuildParameterType.String,
-            description="Registry password/token (Docker Hub: use a PAT; pair with USERNAME)",
+            description=(
+                "Deprecated callback password/token. Supply with USERNAME; Docker Hub PATs "
+                "are used as passwords."
+            ),
             default_value="",
             required=False,
         ),
@@ -45,6 +53,12 @@ class ContainerRegistry(PayloadType):
             name="INSECURE",
             parameter_type=BuildParameterType.Boolean,
             description="Use HTTP and disable TLS verification (Docker Hub: false)",
+            default_value=False,
+        ),
+        BuildParameter(
+            name="ANONYMOUS",
+            parameter_type=BuildParameterType.Boolean,
+            description="Force anonymous registry access and ignore build/user-secret credentials",
             default_value=False,
         ),
     ]
