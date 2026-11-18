@@ -3,7 +3,7 @@ FROM itsafeaturemythic/mythic_python_base:latest as builder
 COPY ["requirements.txt", "requirements.txt"]
 RUN python3 -m pip wheel --wheel-dir /wheels -r requirements.txt
 
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # Install skopeo and other dependencies
 RUN apt-get update && \
