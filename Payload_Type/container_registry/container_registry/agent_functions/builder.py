@@ -16,7 +16,7 @@ class ContainerRegistry(PayloadType):
     supports_dynamic_loading = False
     mythic_encrypts = True
     agent_type = AgentType.Service
-    semver = "1.0.0"
+    semver = "0.0.2"
 
     build_parameters = [
         BuildParameter(
