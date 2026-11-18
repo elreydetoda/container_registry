@@ -43,7 +43,7 @@ git clone https://github.com/elreydetoda/container_registry
 
 ## Prerequisites
 
-- Mythic C2 Framework installed
+- Mythic C2 Framework v4.0 (this branch is not compatible with Mythic v3)
 - Docker (for containerized deployment)
 - Skopeo binary (included in the Docker container)
 - [container_wrapper](https://github.com/elreydetoda/container_wrapper) payload type (for upload functionality)

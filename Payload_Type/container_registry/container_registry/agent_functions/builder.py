@@ -9,15 +9,14 @@ class ContainerRegistry(PayloadType):
     author = "@elreydetoda"
     supported_os = [SupportedOS("container_registry")]
     wrapper = False
-    wrapped_payloads = []
-    note = """
+    description = """
     This is a 3rd party service payload that wraps skopeo
     (https://github.com/containers/skopeo) for OCI container registry operations.
     """
     supports_dynamic_loading = False
     mythic_encrypts = True
     agent_type = AgentType.Service
-    version = "0.0.1"
+    semver = "1.0.0"
 
     build_parameters = [
         BuildParameter(

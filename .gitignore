@@ -41,3 +41,7 @@ Thumbs.db
 # Mythic specific
 *.log
 .mythic/
+
+# Direct WSL development
+.venv-wsl/
+.uv-cache/
